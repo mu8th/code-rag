@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>code-rag · local RAG code assistant</title>
+<meta name="description" content="A local, dependency-light RAG assistant that indexes a Python codebase, embeds it, retrieves the right passages, and answers with source citations.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#020202; --panel:#0a0a0b; --panel-2:#101012; --border:rgba(255,255,255,.08);
+    --text:#f4f4f5; --muted:#a1a1aa; --dim:#6b6b76;
+    --accent:#8b5cf6; --accent-2:#a78bfa; --ok:#22c55e; --err:#ef4444;
+    --mono:'Geist Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(139,92,246,.14), transparent 60%),
+      radial-gradient(900px 500px at 0% 0%, rgba(6,182,212,.10), transparent 55%),
+      var(--bg);
+    color:var(--text);
+    font-family:'Geist',system-ui,sans-serif;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:48px 24px 80px}
+  .kicker{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--accent-2)}
+  h1{font-size:2rem;font-weight:700;letter-spacing:-.02em;margin:.35rem 0 .5rem}
+  h1 .grad{background:linear-gradient(90deg,#a78bfa,#22d3ee);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{color:var(--muted);max-width:60ch;font-size:.95rem}
+  .card{
+    background:linear-gradient(180deg,rgba(255,255,255,.02),transparent),var(--panel);
+    border:1px solid var(--border);border-radius:16px;padding:20px;margin-top:24px;
+    box-shadow:0 30px 60px -30px rgba(0,0,0,.8);
+  }
+  .termbar{display:flex;align-items:center;gap:8px;padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid var(--border)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .termbar .title{font-family:var(--mono);font-size:.72rem;color:var(--dim);margin-left:8px}
+  .termbar .live{margin-left:auto;font-family:var(--mono);font-size:.68rem;color:var(--dim);display:flex;align-items:center;gap:6px}
+  .live .ldot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+  .live.on .ldot{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .qrow{display:flex;gap:10px}
+  textarea{
+    flex:1;background:var(--panel-2);border:1px solid var(--border);border-radius:10px;color:var(--text);
+    font-family:var(--mono);font-size:.85rem;padding:12px 14px;resize:vertical;min-height:52px;
+  }
+  textarea:focus{outline:none;border-color:var(--accent)}
+  button.ask{
+    background:linear-gradient(90deg,var(--accent),#6d28d9);color:#fff;border:0;border-radius:10px;
+    padding:0 20px;font-family:'Geist';font-weight:600;font-size:.9rem;cursor:pointer;
+    box-shadow:0 10px 30px -10px rgba(139,92,246,.7);
+  }
+  button.ask:disabled{opacity:.55;cursor:progress}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .chip{
+    font-family:var(--mono);font-size:.72rem;color:var(--muted);background:var(--panel-2);
+    border:1px solid var(--border);border-radius:999px;padding:6px 12px;cursor:pointer;transition:.15s;
+  }
+  .chip:hover{color:var(--text);border-color:var(--accent);transform:translateY(-1px)}
+  .meta{font-family:var(--mono);font-size:.7rem;color:var(--dim);margin-top:12px}
+  .answer{margin-top:22px;display:none}
+  .answer.show{display:block;animation:fade .3s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .ah{font-family:var(--mono);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-2);margin-bottom:8px}
+  .ans-body{font-size:.92rem;color:#e4e4e7;white-space:pre-wrap;background:var(--panel-2);border:1px solid var(--border);border-radius:12px;padding:16px}
+  .ans-body code{font-family:var(--mono);font-size:.85em;background:rgba(139,92,246,.14);color:#d6c7ff;padding:.05em .35em;border-radius:4px}
+  .srcs{margin-top:16px}
+  .src{
+    display:grid;grid-template-columns:auto 1fr;gap:12px;padding:12px;border:1px solid var(--border);
+    border-radius:10px;margin-bottom:8px;background:var(--panel-2);
+  }
+  .src .rank{font-family:var(--mono);font-size:.72rem;color:var(--accent-2);align-self:start}
+  .src .sym{font-family:var(--mono);font-size:.78rem;color:var(--text)}
+  .src .loc{font-family:var(--mono);font-size:.7rem;color:var(--dim)}
+  .src .snip{font-family:var(--mono);font-size:.72rem;color:var(--muted);margin-top:6px;white-space:pre-wrap;word-break:break-word}
+  .err{color:var(--err);font-family:var(--mono);font-size:.82rem;margin-top:14px;display:none}
+  footer{margin-top:32px;font-family:var(--mono);font-size:.7rem;color:var(--dim);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  @media (max-width:560px){h1{font-size:1.5rem}.qrow{flex-direction:column}button.ask{padding:12px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">local · private · no cloud</div>
+  <h1>code-rag <span class="grad">code assistant</span></h1>
+  <p class="lede">
+    Ask questions about a Python codebase. It indexes the source into semantic chunks,
+    embeds them with a local model, retrieves the most relevant passages, and synthesizes
+    a grounded, source-cited answer — all on this machine.
+  </p>
+
+  <div class="card">
+    <div class="termbar">
+      <span class="dot" style="background:#ef4444"></span>
+      <span class="dot" style="background:#eab308"></span>
+      <span class="dot" style="background:#22c55e"></span>
+      <span class="title">rag@localhost:~</span>
+      <span class="live" id="live"><span class="ldot"></span><span id="live-text">connecting</span></span>
+    </div>
+
+    <div class="qrow">
+      <textarea id="q" placeholder="e.g. How does the RAG pipeline retrieve relevant code?"></textarea>
+      <button class="ask" id="ask">Ask →</button>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="meta" id="meta">index: …</div>
+
+    <div class="err" id="err"></div>
+
+    <div class="answer" id="answer">
+      <div class="ah">answer</div>
+      <div class="ans-body" id="ans"></div>
+      <div class="ah" style="margin-top:18px">retrieved sources</div>
+      <div class="srcs" id="srcs"></div>
+    </div>
+  </div>
+
+  <footer>
+    <span>code-rag · ingest → embed → retrieve → synthesize</span>
+    <span id="foot">embed: … · llm: …</span>
+  </footer>
+</div>
+
+<script>
+(function(){
+  var API = (location.port === '8090') ? '' : (location.hostname==='localhost'?'http://localhost:8090':'http://'+location.hostname+':8090');
+  var EXAMPLES = [
+    'How does the RAG pipeline retrieve relevant code?',
+    'What does the ingestion step do with a Python file?',
+    'How are the retrieved passages turned into an answer?',
+    'How is the embedding endpoint called?'
+  ];
+  var q = document.getElementById('q');
+  var askBtn = document.getElementById('ask');
+  var ans = document.getElementById('ans');
+  var srcs = document.getElementById('srcs');
+  var answer = document.getElementById('answer');
+  var err = document.getElementById('err');
+  var live = document.getElementById('live');
+  var liveText = document.getElementById('live-text');
+  var meta = document.getElementById('meta');
+  var foot = document.getElementById('foot');
+  var chips = document.getElementById('chips');
+
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function md(s){
+    // minimal markdown: code fences + inline code
+    var t = esc(s);
+    t = t.replace(/```(\w*)\n?([\s\S]*?)```/g, function(_,lang,code){return '<pre style="background:rgba(0,0,0,.4);border:1px solid var(--border);border-radius:8px;padding:10px;margin:8px 0;overflow:auto"><code>'+code+'</code></pre>';});
+    t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+    return t;
+  }
+
+  function loadStatus(){
+    fetch(API+'/api/status',{cache:'no-store'})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        live.classList.add('on');
+        liveText.textContent='ready · '+d.index_size+' chunks';
+        meta.textContent='index: '+d.index_size+' chunks · root: '+d.root;
+        foot.textContent='embed: '+d.embed_model+' · llm: '+d.llm_model;
+      })
+      .catch(function(){ liveText.textContent='offline'; });
+  }
+
+  function ask(question){
+    err.style.display='none';
+    answer.classList.remove('show');
+    askBtn.disabled=true; askBtn.textContent='thinking…';
+    var t0=performance.now();
+    fetch(API+'/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:question})})
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(function(d){
+        ans.innerHTML = md(d.answer);
+        var html='';
+        d.sources.forEach(function(s,i){
+          html += '<div class="src"><div class="rank">#'+(i+1)+'</div><div>'+
+            '<div class="sym">'+esc(s.symbol)+'</div>'+
+            '<div class="loc">'+esc(s.path)+' · lines '+s.start_line+'-'+s.end_line+' · score '+s.score+'</div>'+
+            '<div class="snip">'+esc(s.snippet)+'</div></div></div>';
+        });
+        srcs.innerHTML = html || '<div class="loc">no sources</div>';
+        meta.textContent='index: '+d.sources.length+' sources · answered in '+Math.round(performance.now()-t0)+'ms · '+d.model;
+        answer.classList.add('show');
+      })
+      .catch(function(e){ err.textContent='error: '+e.message; err.style.display='block'; })
+      .then(function(){ askBtn.disabled=false; askBtn.textContent='Ask →'; });
+  }
+
+  EXAMPLES.forEach(function(ex){
+    var c=document.createElement('span'); c.className='chip'; c.textContent=ex;
+    c.addEventListener('click',function(){ q.value=ex; ask(ex); });
+    chips.appendChild(c);
+  });
+  askBtn.addEventListener('click',function(){ var v=q.value.trim(); if(v) ask(v); });
+  q.addEventListener('keydown',function(e){ if(e.key==='Enter' && (e.ctrlKey||e.metaKey)){ var v=q.value.trim(); if(v) ask(v); } });
+
+  loadStatus();
+})();
+</script>
+</body>
+</html>

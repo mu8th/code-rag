@@ -1,0 +1,22 @@
+# Local development setup for code-rag.
+#
+# The assistant needs two local model endpoints:
+#   - Ollama  (embeddings)  -> exposed on the host at :11434
+#   - LM Studio (chat)      -> exposed on the host at :1234
+#
+# The container talks to those endpoints via the host gateway, so they must be
+# reachable from the container network. Nothing here is exposed publicly.
+services:
+  rag:
+    build: .
+    container_name: code-rag
+    ports:
+      - "127.0.0.1:8090:8090"   # local-only
+    environment:
+      RAG_EMBED_ENDPOINT: http://host.docker.internal:11434/api/embed
+      RAG_EMBED_MODEL: nomic-embed-text
+      RAG_LLM_ENDPOINT: http://host.docker.internal:1234/v1/chat/completions
+      RAG_LLM_MODEL: dirk-qwen3.8-27b@q4_k_s
+      RAG_ROOT: /app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

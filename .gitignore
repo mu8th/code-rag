@@ -1,0 +1,20 @@
+# Ignore Python caches and local model state
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+.coverage
+*.egg-info/
+
+# Local model / index state (regenerated on demand)
+.rag_index/
+*.npy
+
+# Editor
+.idea/
+.vscode/
+.DS_Store
