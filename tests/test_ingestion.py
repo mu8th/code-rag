@@ -70,6 +70,42 @@ def test_ingest_empty_root(tmp_path: Path) -> None:
     assert ingestion.ingest(tmp_path) == []
 
 
+def test_ingest_keeps_constants_only_file(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "consts.py",
+        '''
+        """Only constants here."""
+        import os
+
+        MAX_RETRIES = 3
+        NAMES = ["a", "b"]
+        ''',
+    )
+    chunks = ingestion.ingest(tmp_path)
+    # A file with no top-level def/class must still be indexed via its preamble.
+    assert any(c.rel_path == "consts.py" and c.symbol == "<module>" for c in chunks)
+    module = next(c for c in chunks if c.symbol == "<module>")
+    assert "MAX_RETRIES = 3" in module.text
+
+
+def test_ingest_decorator_lines_stay_with_symbol(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "dec.py",
+        '''
+        import functools
+
+        @functools.lru_cache(maxsize=None)
+        def cached(x):
+            return x * 2
+        ''',
+    )
+    chunks = ingestion.ingest(tmp_path)
+    cached = next(c for c in chunks if c.symbol == "cached")
+    assert "@functools.lru_cache" in cached.text
+
+
 def test_to_chunks_preserves_fields(tmp_path: Path) -> None:
     fc = [ingestion.FileChunk("a.py", "f", 1, 3, "def f():\n    pass\n")]
     chunks = ingestion.to_chunks(fc)

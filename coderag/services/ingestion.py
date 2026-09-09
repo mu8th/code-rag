@@ -48,20 +48,30 @@ def _iter_code_files(root: Path) -> Iterator[Path]:
                 yield Path(dirpath) / name
 
 
-def _preamble(source: str) -> tuple[str, int] | None:
-    """Return ``(preamble_text, end_line)`` for the module-level pre-definition text.
+def _preamble(source: str, tree: ast.Module) -> tuple[str, int] | None:
+    """Return ``(preamble_text, end_line)`` for module-level non-definition code.
 
-    The preamble is the docstring plus imports plus any top-level
-    constants/statements that appear before the first top-level definition.
-    Returns ``None`` when the file has no such text.
+    The preamble covers everything at module level that is not a top-level
+    function or class: the docstring, imports, and constants, wherever they
+    appear in the file. It is built from the AST (not line matching), so files
+    with only constants are still indexed and an indented ``def`` inside some
+    other statement can never cut the preamble off early. Returns ``None`` when
+    the file has nothing to keep.
     """
     lines = source.splitlines()
-    for i, line in enumerate(lines, start=1):
-        stripped = line.lstrip()
-        if stripped.startswith(("def ", "class ")):
-            head = "\n".join(lines[: i - 1]).strip()
-            return (head, i - 1) if head else None
-    return None
+    segments: list[tuple[int, int]] = []
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        start = node.lineno
+        end = getattr(node, "end_lineno", None) or start
+        segments.append((start, end))
+    if not segments:
+        return None
+    text = "\n\n".join("\n".join(lines[s - 1 : e]) for s, e in segments).strip()
+    if not text:
+        return None
+    return (text, max(e for _, e in segments))
 
 
 def _chunk_functions(source: str, rel_path: str) -> list[FileChunk]:
@@ -70,21 +80,26 @@ def _chunk_functions(source: str, rel_path: str) -> list[FileChunk]:
     lines = source.splitlines()
     out: list[FileChunk] = []
 
-    preamble = _preamble(source)
+    preamble = _preamble(source, tree)
     if preamble:
         text, end_line = preamble
         out.append(FileChunk(rel_path, "<module>", 1, end_line, text))
 
     for node in tree.body:
+        name = getattr(node, "name", None)
+        if name is None:
+            continue  # skip bare statements at module level (already in preamble)
         start = node.lineno
-        end = getattr(node, "end_lineno", None) or start
+        decorators = getattr(node, "decorator_list", [])
+        if decorators:
+            # Include the decorator lines so they are not lost between the
+            # preamble and the definition itself.
+            start = min(d.lineno for d in decorators)
+        end = getattr(node, "end_lineno", None) or node.lineno
         # Cap very long bodies so a single huge class does not dominate the
         # embedding budget; the first N lines still carry the signature + body.
         kept = min(end - start + 1, _MAX_CHUNK_LINES)
         text = "\n".join(lines[start - 1 : start - 1 + kept])
-        name = getattr(node, "name", None)
-        if name is None:
-            continue  # skip bare statements at module level (already in preamble)
         out.append(FileChunk(rel_path, name, start, min(end, start + kept - 1), text))
     return out
 
