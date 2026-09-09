@@ -1,7 +1,7 @@
 # code-rag
 
 A local, dependency-light **RAG code assistant**. Point it at a Python codebase,
-ask a question, and it answers with a grounded, source-cited response — built
+ask a question, and it answers with a grounded, source-cited response, built
 entirely on your machine.
 
 The pipeline is four stages:
@@ -15,14 +15,14 @@ chunk by symbol  (Ollama nomic) the embedded index  from the passages,
    └──────────────────┴─────────────────┴──────────────►  RagResult
 ```
 
-- **Ingest** — standard-library `ast` splits each file into one chunk per
+- **Ingest**: standard-library `ast` splits each file into one chunk per
   top-level function/class (plus the module preamble), so retrieval lands on the
   right *symbol*.
-- **Embed** — Ollama's `/api/embed` (nomic-embed-text) turns chunks into 768-dim
+- **Embed**: Ollama's `/api/embed` (nomic-embed-text) turns chunks into 768-dim
   vectors, batched over HTTP.
-- **Retrieve** — a pure-numpy cosine index returns the top-k most relevant
+- **Retrieve**: a pure-numpy cosine index returns the top-k most relevant
   passages.
-- **Synthesize** — an OpenAI-compatible local chat endpoint (LM Studio) answers
+- **Synthesize**: an OpenAI-compatible local chat endpoint (LM Studio) answers
   using only the retrieved context, citing the sources it relied on.
 
 ## Why local?
@@ -140,4 +140,4 @@ synthesizer), and the HTTP API. No live model is required to run the tests.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

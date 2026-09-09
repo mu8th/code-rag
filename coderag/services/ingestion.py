@@ -5,7 +5,7 @@ right *symbol*, not an arbitrary line window. The module-level preamble
 (docstring, imports, top-level statements) is kept as its own chunk so questions
 about "what does this module import" still resolve.
 
-Chunking is done with the standard-library :mod:`ast`, so it is robust to
+Chunking is done with the standard-library :mod:`ast`, so it works with any
 formatting and requires no third-party parser.
 """
 

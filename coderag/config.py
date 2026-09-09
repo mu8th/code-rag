@@ -3,7 +3,7 @@
 All values are read from environment variables with sensible local defaults so
 the package works out of the box against a local Ollama embedding endpoint and
 a local LM Studio OpenAI-compatible chat endpoint. Nothing here ever points at
-a public host: the demo is designed to run entirely on the developer's machine.
+a public host: the demo runs entirely on the developer's machine.
 """
 
 from __future__ import annotations
