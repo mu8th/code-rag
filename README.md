@@ -73,7 +73,17 @@ own source). Override the root with `RAG_ROOT=/path/to/other/repo`.
 | `RAG_LLM_MODEL`      | `dirk-qwen3.8-27b@q4_k_s`                 | Chat model id                 |
 | `RAG_TOP_K`          | `4`                                       | Passages retrieved per query  |
 | `RAG_MAX_TOKENS`     | `512`                                     | Generation budget             |
+| `RAG_HOST`           | `127.0.0.1`                               | Demo server bind address      |
 | `RAG_PORT`           | `8090`                                    | Demo server port              |
+
+### Run with Docker
+
+```bash
+docker compose up --build
+```
+
+The container binds the port to host loopback only, and reaches your local
+Ollama / LM Studio through `host.docker.internal` (see `docker-compose.yml`).
 
 > **Reasoning-model note:** LM Studio's local Qwen is a reasoning model. The
 > synthesizer always sends `"reasoning_effort": "none"` so the answer lands in

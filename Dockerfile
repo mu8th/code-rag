@@ -10,4 +10,5 @@ COPY frontend ./frontend
 
 EXPOSE 8090
 
-CMD ["uvicorn", "coderag.main:app", "--host", "127.0.0.1", "--port", "8090"]
+# Bind 0.0.0.0 inside the container; compose maps the port to host loopback only.
+CMD ["uvicorn", "coderag.main:app", "--host", "0.0.0.0", "--port", "8090"]
