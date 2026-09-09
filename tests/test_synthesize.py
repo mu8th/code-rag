@@ -83,3 +83,40 @@ def test_synthesize_empty_raises() -> None:
         pytest.raises(RuntimeError),
     ):
         synthesize("q", [Chunk("a.py", "f", 1, 1, "x")], "http://x/chat", "m")
+
+
+def test_synthesize_null_content_falls_back_to_reasoning() -> None:
+    # Reasoning models often send content: null; that must not crash.
+    resp = json.dumps(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "reasoning_content": "the answer",
+                    }
+                }
+            ]
+        }
+    ).encode("utf-8")
+
+    def fake_urlopen(req, timeout=None):
+        return io.BytesIO(resp)
+
+    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        out = synthesize("q", [Chunk("a.py", "f", 1, 1, "x")], "http://x/chat", "m")
+    assert out == "the answer"
+
+
+def test_synthesize_non_dict_message_raises_type_error() -> None:
+    resp = json.dumps({"choices": [{"message": None}]}).encode("utf-8")
+
+    def fake_urlopen(req, timeout=None):
+        return io.BytesIO(resp)
+
+    with (
+        mock.patch("urllib.request.urlopen", side_effect=fake_urlopen),
+        pytest.raises(TypeError),
+    ):
+        synthesize("q", [Chunk("a.py", "f", 1, 1, "x")], "http://x/chat", "m")

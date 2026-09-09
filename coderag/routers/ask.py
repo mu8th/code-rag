@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..services.pipeline import CodeRAG
+
+logger = logging.getLogger("code-rag.ask")
 
 router = APIRouter(prefix="/api", tags=["rag"])
 
@@ -39,7 +43,12 @@ def ask(body: AskRequest, request: Request) -> AskResponse:
     try:
         result = rag.ask(body.question, k=body.top_k)
     except Exception as exc:  # pragma: no cover - defensive
+        # Log the full error server-side; the client gets a stable message
+        # that does not leak internal state (paths, model ids, stack text).
+        logger.exception("RAG pipeline failed for question %r", body.question)
         raise HTTPException(
-            status_code=502, detail=f"RAG pipeline failed: {exc}"
+            status_code=502,
+            detail="The RAG pipeline failed. Check that the local model "
+            "endpoints (Ollama and LM Studio) are running.",
         ) from exc
     return AskResponse(**result.to_dict())

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import urllib.request
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -26,7 +26,8 @@ def _post(endpoint: str, payload: dict[str, object]) -> dict[str, object]:
         endpoint, data=data, headers={"Content-Type": "application/json"}
     )
     with urllib.request.urlopen(req, timeout=120) as resp:
-        return json.loads(resp.read().decode("utf-8"))  # type: ignore[no-any-return]
+        body = json.loads(resp.read().decode("utf-8"))
+        return cast("dict[str, object]", body)
 
 
 def embed_texts(texts: Sequence[str], endpoint: str, model: str) -> np.ndarray:

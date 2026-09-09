@@ -9,6 +9,7 @@ exercised in tests without a live model.
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable, Sequence
 
@@ -52,6 +53,7 @@ class CodeRAG:
         self._synthesizer = synthesizer or self._default_synthesizer
         self._chunks: list[Chunk] = []
         self._index: VectorIndex | None = None
+        self._index_lock = threading.Lock()
 
     # -- index lifecycle -------------------------------------------------
 
@@ -70,19 +72,27 @@ class CodeRAG:
         )
 
     def _ensure_index(self) -> VectorIndex:
-        """Build (once) and return the vector index for the configured root."""
+        """Build (once) and return the vector index for the configured root.
+
+        Thread-safe: FastAPI runs sync endpoints on a thread pool, so two
+        concurrent first queries may race into this method; the lock makes the
+        expensive ingest + embed step run exactly once.
+        """
         if self._index is not None:
             return self._index
-        file_chunks = ingestion.ingest(self.settings.root)
-        chunks = ingestion.to_chunks(file_chunks)
-        if not chunks:
-            self._chunks = []
-            self._index = VectorIndex([], np.zeros((0, 0), dtype=np.float32))
+        with self._index_lock:
+            if self._index is not None:
+                return self._index
+            file_chunks = ingestion.ingest(self.settings.root)
+            chunks = ingestion.to_chunks(file_chunks)
+            if not chunks:
+                self._chunks = []
+                self._index = VectorIndex([], np.zeros((0, 0), dtype=np.float32))
+                return self._index
+            matrix = self._embedder([c.text for c in chunks])
+            self._chunks = chunks
+            self._index = VectorIndex(chunks, matrix)
             return self._index
-        matrix = self._embedder([c.text for c in chunks])
-        self._chunks = chunks
-        self._index = VectorIndex(chunks, matrix)
-        return self._index
 
     @property
     def index_size(self) -> int:

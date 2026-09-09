@@ -14,7 +14,6 @@ or ``python -m coderag.main``.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -26,8 +25,6 @@ from . import config
 from .routers import ask as ask_router
 from .routers import status as status_router
 from .services.pipeline import CodeRAG
-
-logger = logging.getLogger("code-rag")
 
 
 @asynccontextmanager

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import urllib.request
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 from ..models import Chunk
 
@@ -40,7 +40,8 @@ def _post(endpoint: str, payload: dict[str, object]) -> dict[str, object]:
         endpoint, data=data, headers={"Content-Type": "application/json"}
     )
     with urllib.request.urlopen(req, timeout=180) as resp:
-        return json.loads(resp.read().decode("utf-8"))  # type: ignore[no-any-return]
+        body = json.loads(resp.read().decode("utf-8"))
+        return cast("dict[str, object]", body)
 
 
 def synthesize(
@@ -64,6 +65,7 @@ def synthesize(
 
     Raises:
         RuntimeError: If the endpoint response has no usable content.
+        TypeError: If the response message is not a JSON object.
     """
     context = _context_block(chunks)
     payload = {
@@ -83,13 +85,16 @@ def synthesize(
     try:
         choices: Any = resp["choices"]
         message: Any = choices[0]["message"]
-        content: str = message.get("content", "")
     except (KeyError, IndexError, TypeError) as exc:  # pragma: no cover - defensive
         raise RuntimeError(f"Malformed LLM response: {exc}") from exc
-    if not content.strip():
+    if not isinstance(message, dict):
+        raise TypeError("Malformed LLM response: message is not an object")
+    content = message.get("content") or ""
+    if not str(content).strip():
         # Some reasoning models put the answer in reasoning_content when the
-        # content field is empty; surface that rather than returning nothing.
-        content = message.get("reasoning_content", "")
-    if not content.strip():
+        # content field is empty or null; surface that rather than nothing.
+        content = message.get("reasoning_content") or ""
+    answer = str(content).strip()
+    if not answer:
         raise RuntimeError("LLM returned an empty answer")
-    return content.strip()
+    return answer
