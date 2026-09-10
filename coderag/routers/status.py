@@ -23,6 +23,7 @@ def status(request: Request) -> dict[str, object]:
         "status": "ok",
         "index_size": rag.index_size,
         "root": str(settings.root),
+        "simulate": settings.simulate,
         "embed_model": settings.embed_model,
         "llm_model": settings.llm_model,
         "top_k": settings.top_k,

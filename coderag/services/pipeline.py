@@ -19,6 +19,7 @@ from ..config import Settings, get_settings
 from ..models import Chunk, RagResult, Source
 from . import embed as embed_mod
 from . import ingestion
+from . import simulate as simulate_mod
 from . import synthesize as synthesize_mod
 from .retrieval import VectorIndex
 
@@ -54,22 +55,35 @@ class CodeRAG:
         self._chunks: list[Chunk] = []
         self._index: VectorIndex | None = None
         self._index_lock = threading.Lock()
+        #: Model id that answered the last query (set by the default
+        #: synthesizer so callers can report which endpoint was used).
+        self.last_model: str | None = None
 
     # -- index lifecycle -------------------------------------------------
 
     def _default_embedder(self, texts: Sequence[str]) -> np.ndarray:
+        if self.settings.simulate:
+            return simulate_mod.local_embed(texts)
         return embed_mod.embed_texts(
             texts, self.settings.embed_endpoint, self.settings.embed_model
         )
 
     def _default_synthesizer(self, question: str, chunks: Sequence[Chunk]) -> str:
-        return synthesize_mod.synthesize(
-            question,
-            chunks,
-            self.settings.llm_endpoint,
-            self.settings.llm_model,
-            self.settings.max_tokens,
+        if self.settings.simulate:
+            self.last_model = "simulated"
+            return simulate_mod.synthesize_local(question, chunks)
+        candidates = [(self.settings.llm_endpoint, self.settings.llm_model)]
+        fallback = (
+            self.settings.llm_fallback_endpoint,
+            self.settings.llm_fallback_model,
         )
+        if fallback[0] and fallback not in candidates:
+            candidates.append(fallback)
+        answer, model = synthesize_mod.synthesize_candidates(
+            question, chunks, candidates, self.settings.max_tokens
+        )
+        self.last_model = model
+        return answer
 
     def _ensure_index(self) -> VectorIndex:
         """Build (once) and return the vector index for the configured root.
@@ -152,7 +166,7 @@ class CodeRAG:
             answer=answer,
             sources=sources,
             latency_ms=round((time.perf_counter() - started) * 1000, 1),
-            model=self.settings.llm_model,
+            model=self.last_model or self.settings.llm_model,
             engine="local-rag",
         )
 

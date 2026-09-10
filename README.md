@@ -18,26 +18,42 @@ chunk by symbol  (Ollama nomic) the embedded index  from the passages,
 - **Ingest**: standard-library `ast` splits each file into one chunk per
   top-level function/class (plus the module preamble), so retrieval lands on the
   right *symbol*.
-- **Embed**: Ollama's `/api/embed` (nomic-embed-text) turns chunks into 768-dim
-  vectors, batched over HTTP.
+- **Embed**: deterministic feature-hashing vectors by default (offline, no
+  model); optionally Ollama's `/api/embed` (nomic-embed-text) in live mode.
 - **Retrieve**: a pure-numpy cosine index returns the top-k most relevant
-  passages.
-- **Synthesize**: an OpenAI-compatible local chat endpoint (LM Studio) answers
-  using only the retrieved context, citing the sources it relied on.
+  passages. This stage is real in both modes: simulation mode ranks by token
+  overlap, which lands queries on the right symbols for code.
+- **Synthesize**: rule-based grounded summary by default (names the top-ranked
+  symbol and quotes each cited passage); optionally an OpenAI-compatible local
+  chat endpoint in live mode. The primary endpoint defaults to LM Studio; if it
+  is not running, the synthesizer falls back to a second local endpoint
+  (Ollama's OpenAI-compatible API by default).
+
+### Simulation mode (default)
+
+The demo is meant to run 24/7 on a machine that does not keep a local LLM
+loaded, so by default (`RAG_SIMULATE=1`) the pipeline runs **fully offline**:
+no Ollama, no LM Studio, no network calls. Ingestion and retrieval are still
+the real code paths; only the embedding and answer-generation steps are
+deterministic stand-ins. Answers report `"model": "simulated"` so the UI can be
+honest about what produced them. Set `RAG_SIMULATE=0` to use real local models.
 
 ## Why local?
 
-Everything runs against the developer's own model endpoints. Nothing is sent to
-a public host, the server binds to `127.0.0.1` only, and the whole thing degrades
-honestly (clear error, not a 500) if a model is offline.
+Everything runs on the developer's own machine: nothing is sent to a public
+host, the server binds to `127.0.0.1` only, and the whole thing degrades
+honestly (clear error, not a 500) if a live-mode model endpoint is offline.
 
 ## Requirements
 
-- Python 3.11+
-- [Ollama](https://ollama.com) with the `nomic-embed-text` model
-  (`ollama pull nomic-embed-text`)
-- [LM Studio](https://lmstudio.ai) serving an OpenAI-compatible endpoint (or any
-  compatible local LLM)
+- Python 3.11+ (that is all simulation mode needs)
+- For live mode (`RAG_SIMULATE=0`):
+  - [Ollama](https://ollama.com) with `nomic-embed-text`
+    (`ollama pull nomic-embed-text`) and a chat model, e.g. `qwen3:4b`
+    (`ollama pull qwen3:4b`)
+  - Optionally [LM Studio](https://lmstudio.ai) (or any OpenAI-compatible
+    local LLM) as the primary answer endpoint; if it is down, Ollama's chat
+    model is used instead
 
 Install deps:
 
@@ -66,11 +82,14 @@ own source). Override the root with `RAG_ROOT=/path/to/other/repo`.
 
 | Variable             | Default                                   | Purpose                       |
 |----------------------|-------------------------------------------|-------------------------------|
+| `RAG_SIMULATE`       | `1`                                       | Offline simulation mode (no models); `0` for live local models |
 | `RAG_ROOT`           | this project's root                       | Codebase to index             |
 | `RAG_EMBED_ENDPOINT` | `http://localhost:11434/api/embed`        | Ollama embed URL              |
 | `RAG_EMBED_MODEL`    | `nomic-embed-text`                        | Embedding model               |
-| `RAG_LLM_ENDPOINT`   | `http://localhost:1234/v1/chat/completions` | Chat completions URL        |
-| `RAG_LLM_MODEL`      | `dirk-qwen3.8-27b@q4_k_s`                 | Chat model id                 |
+| `RAG_LLM_ENDPOINT`   | `http://localhost:1234/v1/chat/completions` | Primary chat URL (LM Studio)  |
+| `RAG_LLM_MODEL`      | `dirk-qwen3.8-27b@q4_k_s`                 | Primary chat model id       |
+| `RAG_LLM_FALLBACK_ENDPOINT` | `http://localhost:11434/v1/chat/completions` | Fallback chat URL (Ollama); tried only if the primary refuses connections |
+| `RAG_LLM_FALLBACK_MODEL`  | `qwen3:4b`                        | Fallback model id           |
 | `RAG_TOP_K`          | `4`                                       | Passages retrieved per query  |
 | `RAG_MAX_TOKENS`     | `512`                                     | Generation budget             |
 | `RAG_HOST`           | `127.0.0.1`                               | Demo server bind address      |
@@ -119,6 +138,7 @@ settings = Settings(
     bind_host="127.0.0.1",
     bind_port=8090,
     static_dir=Path("frontend"),
+    simulate=False,  # use the real local model endpoints above
 )
 rag = CodeRAG(settings)
 ```

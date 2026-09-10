@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import io
 import json
+import urllib.error
 from typing import Any
 from unittest import mock
 
 import pytest
 
 from coderag.models import Chunk
-from coderag.services.synthesize import synthesize
+from coderag.services.synthesize import synthesize, synthesize_candidates
 
 
 def _fake_resp(content: str) -> bytes:
@@ -120,3 +121,74 @@ def test_synthesize_non_dict_message_raises_type_error() -> None:
         pytest.raises(TypeError),
     ):
         synthesize("q", [Chunk("a.py", "f", 1, 1, "x")], "http://x/chat", "m")
+
+
+def test_candidates_fall_back_when_primary_refuses() -> None:
+    chunks = [Chunk("a.py", "f", 1, 3, "def f():\n    return 1\n")]
+
+    def fake_urlopen(req, timeout=None):
+        url = req.full_url
+        if url == "http://primary/chat":
+            raise urllib.error.URLError("connection refused")
+        payload = json.loads(req.data.decode("utf-8"))
+        assert payload["model"] == "fallback-model"
+        return io.BytesIO(_fake_resp("answered by fallback."))
+
+    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        answer, model = synthesize_candidates(
+            "q",
+            chunks,
+            [
+                ("http://primary/chat", "primary-model"),
+                ("http://fallback/chat", "fallback-model"),
+            ],
+        )
+
+    assert answer == "answered by fallback."
+    assert model == "fallback-model"
+
+
+def test_candidates_use_primary_when_healthy() -> None:
+    chunks = [Chunk("a.py", "f", 1, 3, "def f():\n    return 1\n")]
+    hits: list[str] = []
+
+    def fake_urlopen(req, timeout=None):
+        hits.append(req.full_url)
+        return io.BytesIO(_fake_resp("primary answer."))
+
+    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        answer, model = synthesize_candidates(
+            "q",
+            chunks,
+            [
+                ("http://primary/chat", "primary-model"),
+                ("http://fallback/chat", "fallback-model"),
+            ],
+        )
+
+    assert answer == "primary answer."
+    assert model == "primary-model"
+    assert hits == ["http://primary/chat"]  # fallback never contacted
+
+
+def test_candidates_all_unreachable_raises() -> None:
+    def fake_urlopen(req, timeout=None):
+        raise urllib.error.URLError("connection refused")
+
+    with (
+        mock.patch("urllib.request.urlopen", side_effect=fake_urlopen),
+        pytest.raises(RuntimeError, match="All LLM endpoints unreachable"),
+    ):
+        synthesize_candidates(
+            "q",
+            [Chunk("a.py", "f", 1, 1, "x")],
+            [
+                ("http://primary/chat", "m1"),
+                ("http://fallback/chat", "m2"),
+            ],
+        )
+
+
+def test_candidates_no_endpoints_raises() -> None:
+    with pytest.raises(RuntimeError, match="No LLM endpoints configured"):
+        synthesize_candidates("q", [Chunk("a.py", "f", 1, 1, "x")], [])

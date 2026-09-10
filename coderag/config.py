@@ -41,6 +41,18 @@ class Settings:
     bind_port: int
     #: Directory containing the static demo frontend.
     static_dir: Path
+    #: Fallback chat endpoint, tried only when the primary refuses connections
+    #: (e.g. LM Studio not running but Ollama is). Empty disables the fallback;
+    #: :func:`get_settings` defaults it to Ollama's OpenAI-compatible API so
+    #: the demo works with a single local runtime.
+    llm_fallback_endpoint: str = ""
+    #: Model id for the fallback endpoint (used only when the fallback
+    #: endpoint is set).
+    llm_fallback_model: str = ""
+    #: Run fully offline (the demo default): deterministic local embeddings and
+    #: rule-based synthesis, so no model endpoints are contacted at all. Set to
+    #: False (``RAG_SIMULATE=0``) to use the real local model endpoints.
+    simulate: bool = True
 
 
 #: Directories excluded from the repository walk.
@@ -77,9 +89,16 @@ def get_settings() -> Settings:
             "RAG_LLM_ENDPOINT", "http://localhost:1234/v1/chat/completions"
         ),
         llm_model=os.environ.get("RAG_LLM_MODEL", "dirk-qwen3.8-27b@q4_k_s"),
+        llm_fallback_endpoint=os.environ.get(
+            "RAG_LLM_FALLBACK_ENDPOINT",
+            "http://localhost:11434/v1/chat/completions",
+        ),
+        llm_fallback_model=os.environ.get("RAG_LLM_FALLBACK_MODEL", "qwen3:4b"),
         top_k=int(os.environ.get("RAG_TOP_K", "4")),
         max_tokens=int(os.environ.get("RAG_MAX_TOKENS", "512")),
         bind_host=os.environ.get("RAG_HOST", "127.0.0.1"),
         bind_port=int(os.environ.get("RAG_PORT", "8090")),
         static_dir=_PROJECT_DIR / "frontend",
+        simulate=os.environ.get("RAG_SIMULATE", "1").strip().lower()
+        not in {"0", "false", "no", "off"},
     )
