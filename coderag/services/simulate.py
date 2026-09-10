@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Sequence
+from itertools import pairwise
 
 import numpy as np
 
@@ -52,7 +53,7 @@ def _tokenize(text: str) -> list[str]:
         tokens.append(tok)
         if "_" in tok:
             tokens.extend(p for p in tok.split("_") if p)
-    bigrams = [f"{a}_{b}" for a, b in zip(tokens, tokens[1:])]
+    bigrams = [f"{a}_{b}" for a, b in pairwise(tokens)]
     return tokens + bigrams
 
 
@@ -134,9 +135,9 @@ def synthesize_local(question: str, chunks: Sequence[Chunk]) -> str:
         return "No relevant passages were found in the indexed codebase."
     top = chunks[0]
     parts = [
-        f"Top match for this question is {top.path}::{top.symbol} "
-        f"(lines {top.start_line}-{top.end_line}). Grounded summary from the "
-        f"retrieved context:"
+        (f"Top match for this question is {top.path}::{top.symbol} "
+         f"(lines {top.start_line}-{top.end_line}). Grounded summary from the "
+         f"retrieved context:")
     ]
     for i, chunk in enumerate(chunks[:3], start=1):
         line = _citation_line(chunk.text)
