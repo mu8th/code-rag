@@ -66,6 +66,7 @@ WALK_SKIP: frozenset[str] = frozenset(
         ".ruff_cache",
         ".venv",
         "venv",
+        "venvs",
         ".idea",
         ".vscode",
     }
