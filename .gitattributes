@@ -1,0 +1,29 @@
+# Normalize all text files to LF in the repo (files were authored on Windows;
+# the repo now lives on Linux). git converts on check-in/checkout accordingly.
+* text=auto eol=lf
+
+# Explicit: the web bundle is text even though some files are "long lines"
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.cfg text eol=lf
+*.ini text eol=lf
+
+# Never touch binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.db binary
+*.npy binary

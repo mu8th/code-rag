@@ -12,10 +12,11 @@ loaded, so this module provides a fully offline path through the pipeline:
   same text always yields the same vector on any machine.
 
 - :func:`synthesize_local` replaces the LLM step with a deterministic template
-  that composes a grounded answer from the retrieved passages alone: it names
-  the top-ranked symbol and quotes a short excerpt from each cited passage.
-  The answer is exactly as good as the retrieval, never better, which keeps the
-  demo honest about what simulation mode can and cannot do.
+  that composes a grounded, prose answer from the retrieved passages alone: it
+  leads with the top-ranked symbol (signature line quoted) and folds the
+  supporting passages into a single citation sentence. The answer is exactly
+  as good as the retrieval, never better, which keeps the demo honest about
+  what simulation mode can and cannot do.
 
 Everything here is standard library plus numpy; nothing in this module touches
 the network.
@@ -128,23 +129,22 @@ def synthesize_local(question: str, chunks: Sequence[Chunk]) -> str:
         chunks: Retrieved passages, most relevant first.
 
     Returns:
-        A short deterministic answer naming the top-ranked symbol and quoting
-        one line from each cited passage.
+        A short deterministic prose answer that leads with the top-ranked
+        symbol (signature quoted) and cites the supporting passages inline.
     """
     if not chunks:
         return "No relevant passages were found in the indexed codebase."
     top = chunks[0]
-    parts = [
-        (f"Top match for this question is {top.path}::{top.symbol} "
-         f"(lines {top.start_line}-{top.end_line}). Grounded summary from the "
-         f"retrieved context:")
-    ]
-    for i, chunk in enumerate(chunks[:3], start=1):
-        line = _citation_line(chunk.text)
-        if i == 1:
-            parts.append(f"[1] {line or chunk.symbol}")
-        elif line:
-            parts.append(f"[{i}] {chunk.path}::{chunk.symbol}: {line}")
-        else:
-            parts.append(f"[{i}] {chunk.path}::{chunk.symbol}")
-    return "\n".join(parts)
+    top_line = _citation_line(top.text)
+    answer = (
+        f"The most relevant passage is [1] {top.path}::{top.symbol} "
+        f"(lines {top.start_line}-{top.end_line})"
+        + (f" — {top_line}." if top_line else ".")
+    )
+    if len(chunks) > 1:
+        refs = ", ".join(
+            f"[{i}] {c.path}::{c.symbol}"
+            for i, c in enumerate(chunks[1:4], start=2)
+        )
+        answer += f" Supporting context appears in {refs}."
+    return answer
