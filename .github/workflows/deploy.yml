@@ -1,0 +1,33 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-muath-online
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          umask 077
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H 163.192.58.249 >> ~/.ssh/known_hosts 2>/dev/null
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Deploy to muath.online
+        # Idempotent bootstrap: fetch+reset all five repos to origin/main,
+        # refresh virtualenvs, rewrite units/Caddyfile, restart, smoke test.
+        # flock serializes concurrent deploys (e.g. a push to every repo).
+        run: |
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=15 \
+            ubuntu@163.192.58.249 \
+            'flock /var/lock/muath-deploy.lock -c "curl -fsSL https://raw.githubusercontent.com/mu8th/portfolio-website/main/deploy/oracle/setup.sh | sudo bash"'
