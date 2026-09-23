@@ -1,0 +1,21 @@
+name: notify-deploy
+
+# Pushing to any vendored sibling repo should refresh the live site:
+# signal the portfolio repo, whose deploy workflow syncs ALL five repos.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tell portfolio-website to deploy
+        run: |
+          curl -sS -f -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -d '{"event_type":"deploy-website"}' \
+            https://api.github.com/repos/mu8th/portfolio-website/dispatches
+          echo "dispatch sent to mu8th/portfolio-website"
