@@ -47,16 +47,21 @@ _TOKEN_RE = re.compile(r"[a-z0-9_]+")
 
 #: English function words and Python boilerplate. They appear in nearly every
 #: question and every chunk, so they carry no signal about *which* code is
-#: relevant and only dilute the cosine score.
+#: relevant and only dilute the ranking score.
 STOPWORDS: frozenset[str] = frozenset(
-    """
-    a an and are as at be been but by can could did do does doing for from had
-    has have how i if in into is it its may me my not of on or our should so
-    than that the their them then there these they this those to us was we were
-    what when where which while who why will with would you your
-    def class self cls return none true false import pass elif else
-    str int float bool list dict tuple set any
-    """.split()
+    {
+        "a", "an", "and", "are", "as", "at", "be", "been", "but", "by", "can",
+        "could", "did", "do", "does", "doing", "for", "from", "had", "has", "have",
+        "how", "i", "if", "in", "into", "is", "it", "its", "may", "me", "my", "not",
+        "of", "on", "or", "our", "should", "so", "than", "that", "the", "their",
+        "them", "then", "there", "these", "they", "this", "those", "to", "us",
+        "was", "we", "were", "what", "when", "where", "which", "while", "who",
+        "why", "will", "with", "would", "you", "your",
+        # Python boilerplate
+        "def", "class", "self", "cls", "return", "none", "true", "false",
+        "import", "pass", "elif", "else", "str", "int", "float", "bool", "list",
+        "dict", "tuple", "set", "any",
+    }
 )
 
 _CAMEL_RE = re.compile(r"([a-z0-9])([A-Z])")
