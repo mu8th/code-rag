@@ -111,3 +111,22 @@ def test_to_chunks_preserves_fields(tmp_path: Path) -> None:
     chunks = ingestion.to_chunks(fc)
     assert chunks[0].path == "a.py"
     assert chunks[0].id == "a.py::f:1"
+
+
+def test_ingest_can_skip_tests(tmp_path: Path) -> None:
+    (tmp_path / "pkg").mkdir()
+    core = tmp_path / "pkg" / "core.py"
+    core.write_text("def run():\n    return 1\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_core.py").write_text(
+        "def test_run():\n    assert True\n", encoding="utf-8"
+    )
+    (tmp_path / "pkg" / "test_inline.py").write_text(
+        "def test_inline():\n    assert True\n", encoding="utf-8"
+    )
+
+    everything = {c.rel_path for c in ingestion.ingest(tmp_path)}
+    code_only = {c.rel_path for c in ingestion.ingest(tmp_path, skip_tests=True)}
+
+    assert "tests/test_core.py" in everything
+    assert code_only == {"pkg/core.py"}

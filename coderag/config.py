@@ -53,6 +53,12 @@ class Settings:
     #: rule-based synthesis, so no model endpoints are contacted at all. Set to
     #: False (``RAG_SIMULATE=0``) to use the real local model endpoints.
     simulate: bool = True
+    #: Relevance floor. When the best passage scores below it, the pipeline
+    #: answers "no confident match" instead of citing weak passages.
+    min_score: float = 0.0
+    #: Leave test files (``tests/``, ``test_*.py``) out of the index, so
+    #: answers cite the implementation rather than its tests.
+    skip_tests: bool = False
 
 
 #: Directories excluded from the repository walk.
@@ -73,6 +79,17 @@ WALK_SKIP: frozenset[str] = frozenset(
 )
 
 
+#: Default relevance floor for simulation mode's normalized BM25 score.
+#: Calibrated on this repository: questions about the code score 0.3-0.9,
+#: unrelated ones ("best pizza recipe", "Kubernetes ingress") 0.0-0.12.
+SIMULATED_MIN_SCORE = 0.2
+
+
+def _flag(name: str, default: str) -> bool:
+    value = os.environ.get(name, default).strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
 def get_settings() -> Settings:
     """Build :class:`Settings` from the environment.
 
@@ -80,6 +97,8 @@ def get_settings() -> Settings:
     environment variables (see :mod:`coderag.config`).
     """
     root = Path(os.environ.get("RAG_ROOT", str(_PROJECT_DIR)))
+    simulate = _flag("RAG_SIMULATE", "1")
+    default_floor = str(SIMULATED_MIN_SCORE) if simulate else "0"
     return Settings(
         root=root,
         embed_endpoint=os.environ.get(
@@ -100,6 +119,7 @@ def get_settings() -> Settings:
         bind_host=os.environ.get("RAG_HOST", "127.0.0.1"),
         bind_port=int(os.environ.get("RAG_PORT", "8090")),
         static_dir=_PROJECT_DIR / "frontend",
-        simulate=os.environ.get("RAG_SIMULATE", "1").strip().lower()
-        not in {"0", "false", "no", "off"},
+        simulate=simulate,
+        min_score=float(os.environ.get("RAG_MIN_SCORE", default_floor)),
+        skip_tests=_flag("RAG_SKIP_TESTS", "0"),
     )

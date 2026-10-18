@@ -39,11 +39,28 @@ class FileChunk:
     text: str
 
 
-def _iter_code_files(root: Path) -> Iterator[Path]:
+#: Directory names treated as test code when ``skip_tests`` is set.
+TEST_DIRS = frozenset({"tests", "test", "testing"})
+
+
+def _is_test_file(name: str) -> bool:
+    return (
+        name.startswith("test_")
+        or name.endswith("_test.py")
+        or name == "conftest.py"
+    )
+
+
+def _iter_code_files(root: Path, skip_tests: bool = False) -> Iterator[Path]:
     """Yield every indexable source file under ``root`` (skipping VCS/caches)."""
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in WALK_SKIP]
+        dirnames[:] = [
+            d for d in dirnames
+            if d not in WALK_SKIP and not (skip_tests and d in TEST_DIRS)
+        ]
         for name in filenames:
+            if skip_tests and _is_test_file(name):
+                continue
             if os.path.splitext(name)[1].lower() in CODE_EXTS:
                 yield Path(dirpath) / name
 
@@ -104,11 +121,12 @@ def _chunk_functions(source: str, rel_path: str) -> list[FileChunk]:
     return out
 
 
-def ingest(root: Path) -> list[FileChunk]:
+def ingest(root: Path, skip_tests: bool = False) -> list[FileChunk]:
     """Index ``root`` into a flat list of :class:`FileChunk`.
 
     Args:
         root: Directory to walk.
+        skip_tests: Leave ``tests/`` directories and ``test_*.py`` files out.
 
     Returns:
         One :class:`FileChunk` per top-level symbol (plus module preambles).
@@ -116,7 +134,7 @@ def ingest(root: Path) -> list[FileChunk]:
         malformed file never breaks the whole index.
     """
     chunks: list[FileChunk] = []
-    for path in _iter_code_files(root):
+    for path in _iter_code_files(root, skip_tests):
         try:
             source = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
