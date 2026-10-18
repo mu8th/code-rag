@@ -23,7 +23,7 @@ jobs:
           pip install ruff==0.16.6
 
       - name: Lint (ruff)
-        run: ruff check .
+        run: ruff check --output-format=github .
 
       - name: Run tests
         run: pytest -q
