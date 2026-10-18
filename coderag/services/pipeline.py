@@ -32,6 +32,10 @@ Synthesizer = Callable[[str, Sequence[Chunk]], str]
 _SNIPPET_LINES = 3
 #: Maximum characters kept in a citation snippet.
 _SNIPPET_CHARS = 240
+#: Bounds on the full passage text returned with each source.
+_TEXT_LINES = 80
+_TEXT_CHARS = 6000
+
 
 
 class CodeRAG:
@@ -53,8 +57,10 @@ class CodeRAG:
         self._embedder = embedder or self._default_embedder
         self._synthesizer = synthesizer or self._default_synthesizer
         self._chunks: list[Chunk] = []
-        self._index: VectorIndex | None = None
+        self._index: VectorIndex | simulate_mod.LexicalIndex | None = None
         self._index_lock = threading.Lock()
+        self._uses_default_embedder = embedder is None
+        self._uses_default_synthesizer = synthesizer is None
         #: Model id that answered the last query (set by the default
         #: synthesizer so callers can report which endpoint was used).
         self.last_model: str | None = None
@@ -71,7 +77,9 @@ class CodeRAG:
     def _default_synthesizer(self, question: str, chunks: Sequence[Chunk]) -> str:
         if self.settings.simulate:
             self.last_model = "simulated"
-            return simulate_mod.synthesize_local(question, chunks)
+            index = self._index
+            idf = index.idf if isinstance(index, simulate_mod.LexicalIndex) else None
+            return simulate_mod.synthesize_local(question, chunks, idf)
         candidates = [(self.settings.llm_endpoint, self.settings.llm_model)]
         fallback = (
             self.settings.llm_fallback_endpoint,
@@ -85,8 +93,12 @@ class CodeRAG:
         self.last_model = model
         return answer
 
-    def _ensure_index(self) -> VectorIndex:
-        """Build (once) and return the vector index for the configured root.
+    def _ensure_index(self) -> VectorIndex | simulate_mod.LexicalIndex:
+        """Build (once) and return the index for the configured root.
+
+        Simulation mode with the default embedder uses the offline BM25
+        :class:`~coderag.services.simulate.LexicalIndex`; every other
+        configuration embeds the chunks into a cosine :class:`VectorIndex`.
 
         Thread-safe: FastAPI runs sync endpoints on a thread pool, so two
         concurrent first queries may race into this method; the lock makes the
@@ -97,11 +109,17 @@ class CodeRAG:
         with self._index_lock:
             if self._index is not None:
                 return self._index
-            file_chunks = ingestion.ingest(self.settings.root)
+            file_chunks = ingestion.ingest(
+                self.settings.root, skip_tests=self.settings.skip_tests
+            )
             chunks = ingestion.to_chunks(file_chunks)
             if not chunks:
                 self._chunks = []
                 self._index = VectorIndex([], np.zeros((0, 0), dtype=np.float32))
+                return self._index
+            if self.settings.simulate and self._uses_default_embedder:
+                self._chunks = chunks
+                self._index = simulate_mod.LexicalIndex(chunks)
                 return self._index
             matrix = self._embedder([c.text for c in chunks])
             self._chunks = chunks
@@ -127,8 +145,11 @@ class CodeRAG:
         """
         index = self._ensure_index()
         k = k or self.settings.top_k
-        qvec = self._embedder([question])[0]
-        pairs = index.query(qvec, k)
+        if isinstance(index, simulate_mod.LexicalIndex):
+            pairs = index.search(question, k)
+        else:
+            qvec = self._embedder([question])[0]
+            pairs = index.query(qvec, k)
         return [self._to_source(pos, score) for pos, score in pairs]
 
     def _to_source(self, pos: int, score: float) -> Source:
@@ -137,8 +158,15 @@ class CodeRAG:
         snippet = "\n".join(lines[:_SNIPPET_LINES]).strip()
         if len(snippet) > _SNIPPET_CHARS:
             snippet = snippet[:_SNIPPET_CHARS].rstrip() + "…"
+        text = "\n".join(lines[:_TEXT_LINES])[:_TEXT_CHARS]
         return Source(
-            chunk.path, chunk.symbol, chunk.start_line, chunk.end_line, score, snippet
+            chunk.path,
+            chunk.symbol,
+            chunk.start_line,
+            chunk.end_line,
+            score,
+            snippet,
+            text,
         )
 
     def ask(self, question: str, k: int | None = None) -> RagResult:
@@ -154,11 +182,26 @@ class CodeRAG:
         """
         started = time.perf_counter()
         sources = self.retrieve(question, k)
+        best = sources[0].score if sources else 0.0
+        confident = True
         if not self._chunks:
             # No Python source found (empty tree or nothing indexable).
             answer = "The codebase could not be indexed (no Python source found)."
         elif not sources:
             answer = "No relevant passages were found in the indexed codebase."
+        elif best < self.settings.min_score:
+            # Citing the least-bad passages would dress a non-answer up as a
+            # grounded one; say so plainly instead.
+            confident = False
+            answer = (
+                "No confident match in this codebase: the closest passage "
+                f"scored {best:.2f}, below the {self.settings.min_score:.2f} "
+                "relevance floor. Try naming a function, module or concept "
+                "from the code."
+            )
+            sources = []
+            if self.settings.simulate and self._uses_default_synthesizer:
+                self.last_model = "simulated"
         else:
             answer = self._synthesizer(question, self._chunks_for(sources))
         return RagResult(
@@ -168,6 +211,8 @@ class CodeRAG:
             latency_ms=round((time.perf_counter() - started) * 1000, 1),
             model=self.last_model or self.settings.llm_model,
             engine="local-rag",
+            confident=confident,
+            best_score=best,
         )
 
     # -- helpers ---------------------------------------------------------

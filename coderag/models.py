@@ -41,6 +41,7 @@ class Source:
     end_line: int
     score: float
     snippet: str  # short excerpt shown to the user as the citation
+    text: str = ""  # the full passage (capped), so a UI can expand a citation
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -50,6 +51,7 @@ class Source:
             "end_line": self.end_line,
             "score": round(self.score, 4),
             "snippet": self.snippet,
+            "text": self.text,
         }
 
 
@@ -63,6 +65,11 @@ class RagResult:
     latency_ms: float = 0.0
     model: str = ""
     engine: str = ""
+    #: False when the best passage fell below the relevance floor; the answer
+    #: then says so and ``sources`` is empty.
+    confident: bool = True
+    #: Score of the best passage, reported even when it was not confident.
+    best_score: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -72,4 +79,6 @@ class RagResult:
             "latency_ms": self.latency_ms,
             "model": self.model,
             "engine": self.engine,
+            "confident": self.confident,
+            "best_score": round(self.best_score, 4),
         }

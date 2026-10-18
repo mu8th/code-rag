@@ -30,6 +30,8 @@ class AskResponse(BaseModel):
     latency_ms: float
     model: str
     engine: str
+    confident: bool = True
+    best_score: float = 0.0
 
 
 @router.post("/ask", response_model=AskResponse)

@@ -1,5 +1,8 @@
 # code-rag
 
+**[Try the live demo →](https://muath.online/#project-rag)** Ask a question about this
+repository and get an answer whose every sentence is quoted from the code it cites.
+
 A local, dependency-light **RAG code assistant**. Point it at a Python codebase,
 ask a question, and it answers with a grounded, source-cited response, built
 entirely on your machine.
@@ -18,13 +21,19 @@ chunk by symbol  (Ollama nomic) the embedded index  from the passages,
 - **Ingest**: standard-library `ast` splits each file into one chunk per
   top-level function/class (plus the module preamble), so retrieval lands on the
   right *symbol*.
-- **Embed**: deterministic feature-hashing vectors by default (offline, no
-  model); optionally Ollama's `/api/embed` (nomic-embed-text) in live mode.
-- **Retrieve**: a pure-numpy cosine index returns the top-k most relevant
-  passages. This stage is real in both modes: simulation mode ranks by token
-  overlap, which lands queries on the right symbols for code.
-- **Synthesize**: rule-based grounded summary by default (names the top-ranked
-  symbol and quotes each cited passage); optionally an OpenAI-compatible local
+- **Embed**: Ollama's `/api/embed` (nomic-embed-text) in live mode. Simulation
+  mode indexes terms instead of vectors (next bullet).
+- **Retrieve**: live mode uses a pure-numpy cosine index over the embeddings.
+  Simulation mode uses BM25 over three weighted fields per chunk (file path and
+  symbol name, docstring and comment prose, code terms), with stopwords removed
+  and light stemming so `citations`, `citing` and `cites` meet. Scores are
+  normalized to the share of the question matched (0 to 1).
+- **Relevance floor**: when the best passage scores below `RAG_MIN_SCORE`, the
+  answer says "no confident match" and cites nothing, instead of dressing weak
+  passages up as a grounded answer.
+- **Synthesize**: extractive by default: the docstring and comment sentences
+  from the retrieved passages that share the most rare terms with the question,
+  each followed by its `[n]` citation. Optionally an OpenAI-compatible local
   chat endpoint in live mode. The primary endpoint defaults to LM Studio; if it
   is not running, the synthesizer falls back to a second local endpoint
   (Ollama's OpenAI-compatible API by default).
@@ -37,6 +46,10 @@ no Ollama, no LM Studio, no network calls. Ingestion and retrieval are still
 the real code paths; only the embedding and answer-generation steps are
 deterministic stand-ins. Answers report `"model": "simulated"` so the UI can be
 honest about what produced them. Set `RAG_SIMULATE=0` to use real local models.
+
+Each response also carries `confident` (false when the relevance floor refused
+the question), `best_score`, and for every source the full passage `text`
+(capped at 80 lines) so a UI can expand a citation into the code it quotes.
 
 ## Why local?
 
@@ -91,6 +104,8 @@ own source). Override the root with `RAG_ROOT=/path/to/other/repo`.
 | `RAG_LLM_FALLBACK_ENDPOINT` | `http://localhost:11434/v1/chat/completions` | Fallback chat URL (Ollama); tried only if the primary refuses connections |
 | `RAG_LLM_FALLBACK_MODEL`  | `qwen3:4b`                        | Fallback model id           |
 | `RAG_TOP_K`          | `4`                                       | Passages retrieved per query  |
+| `RAG_MIN_SCORE`      | `0.2` in simulation mode, `0` live        | Relevance floor; below it the answer is "no confident match" |
+| `RAG_SKIP_TESTS`     | `0`                                       | `1` leaves `tests/` and `test_*.py` out of the index |
 | `RAG_MAX_TOKENS`     | `512`                                     | Generation budget             |
 | `RAG_HOST`           | `127.0.0.1`                               | Demo server bind address      |
 | `RAG_PORT`           | `8090`                                    | Demo server port              |
